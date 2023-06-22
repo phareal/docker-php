@@ -55,4 +55,4 @@ WORKDIR /var/www/html
 
 EXPOSE 9000
 
-CMD ["supervisord"]
+CMD ["/usr/bin/supervisord","-n"]
