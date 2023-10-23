@@ -1,0 +1,101 @@
+/*define the base variables*/
+variable "REPO" { default = "nehiyr/php" }
+// the docker repo
+variable "TAG_PREFIX" { default = "" }
+// the tag prefix
+variable "TAG" { default = "latest" }
+// the tag suffic
+variable "GLOBAL_VERSION" { default = "v1" }
+// the tag suffix
+
+
+{% set phpVersions = {
+    '8.0': {'supported': false, },
+    '8.1': {'supported': true, },
+} -%}
+
+// define the available variants available in my docker image
+{% set variants = {
+    'fpm': { 'enabled':true},
+    'apache': { 'enabled':false },
+    'nginx': {'enabled':false },
+    'caddy': { 'enabled':false},
+} -%}
+
+group "default" {
+  targets = [
+    {% for version, opt in phpVersions.items() %}
+    {% if opt.supported %}"{{ version.replace('.', '_') }}",
+    {% endif %}
+    {% endfor %}
+  ]
+}
+{% for version, opt in phpVersions.items() %}
+{% if opt.supported %}
+group "{{ version.replace('.', '_') }}" {
+  targets = [
+    {%- for var, varOpt in variants.items() %}
+    {% if varOpt.enabled %}
+    "{{ version.replace('.', '_') }}-{{ var }}", "{{ version.replace('.', '_') }}-{{ var }}-dev",
+    {% endif %}
+    {%- endfor %}
+  ]
+}
+{% endif %}
+{% endfor %}
+
+
+target "default" {
+  context = "."
+  args = {
+    GLOBAL_VERSION = "v5"
+  }
+  #platforms = ["linux/amd64", "linux/arm64"]
+  #platforms = ["linux/amd64"]
+  platforms = [BAKE_LOCAL_PLATFORM] # export in system platform by default
+  pull = true
+  output = ["type=docker"] # export in local docker by default
+}
+
+
+
+{# define the core logic of the image building #}
+{% for version, opt in phpVersions.items() %}
+{% if opt.supported %}
+{%- for var, varOpt in variants.items() %}
+  {% if varOpt.enabled %}
+###############################
+## PHP {{ version }} - variant {{ var }}
+###############################
+
+group "{{ version.replace('.', '_') }}-{{ var }}-all" {
+  targets = [
+    "{{ version.replace('.', '_') }}-{{ var }}", "{{ version.replace('.', '_') }}-{{ var }}-dev",
+  ]
+}
+
+target "{{ version.replace('.', '_') }}-{{ var }}" {
+  inherits = ["default"]
+  dockerfile = "Dockerfile.{{ version }}-{{ var }}"
+  args = {
+    PHP_VERSION_MINOR = "{{ version }}"
+    VARIANT = "{{ var }}"
+  }
+}
+target "{{ version.replace('.', '_') }}-{{ var }}-dev" {
+  inherits = ["{{ version.replace('.', '_') }}-{{ var }}"]
+  dockerfile = "Dockerfile.{{ version }}-{{ var }}-dev"
+  args = {
+    PHP_VERSION_MINOR = "{{ version }}"
+    VARIANT = "{{ var }}"
+    FROM_IMAGE = "regular"
+  }
+  contexts = {
+    regular = "target:{{ version.replace('.', '_') }}-{{ var }}"
+  }
+}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
